@@ -25,10 +25,11 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"context"
 	"strings"
 
-	"github.com/kubernetes-sigs/sig-storage-lib-external-provisioner/controller"
-	"github.com/kubernetes-sigs/sig-storage-lib-external-provisioner/util"
+	"sigs.k8s.io/sig-storage-lib-external-provisioner/v5/controller"
+	"sigs.k8s.io/sig-storage-lib-external-provisioner/v5/util"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -116,7 +117,7 @@ func getSecretFromCephFSPersistentVolume(pv *v1.PersistentVolume) (*v1.SecretRef
 }
 
 // Provision creates a storage asset and returns a PV object representing it.
-func (p *cephFSProvisioner) Provision(options controller.VolumeOptions) (*v1.PersistentVolume, error) {
+func (p *cephFSProvisioner) Provision(options controller.ProvisionOptions) (*v1.PersistentVolume, error) {
 	if options.PVC.Spec.Selector != nil {
 		return nil, fmt.Errorf("claim Selector is not supported")
 	}
@@ -185,7 +186,7 @@ func (p *cephFSProvisioner) Provision(options controller.VolumeOptions) (*v1.Per
 		Type: "Opaque",
 	}
 
-	_, err = p.client.CoreV1().Secrets(nameSpace).Create(secret)
+	_, err = p.client.CoreV1().Secrets(nameSpace).Create(context.TODO(), secret, metav1.CreatOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		klog.Errorf("Cephfs Provisioner: create volume failed, err: %v", err)
 		return nil, fmt.Errorf("failed to create secret")
@@ -245,7 +246,7 @@ func (p *cephFSProvisioner) Delete(volume *v1.PersistentVolume) error {
 	// delete CephFS
 	// TODO when beta is removed, have to check kube version and pick v1/beta
 	// accordingly: maybe the controller lib should offer a function for that
-	class, err := p.client.StorageV1beta1().StorageClasses().Get(util.GetPersistentVolumeClass(volume), metav1.GetOptions{})
+	class, err := p.client.StorageV1beta1().StorageClasses().Get(context.TODO(), util.GetPersistentVolumeClass(volume), metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -279,7 +280,7 @@ func (p *cephFSProvisioner) Delete(volume *v1.PersistentVolume) error {
 		klog.Errorf("failed to get secret references, err: %v", err)
 		return err
 	}
-	err = p.client.CoreV1().Secrets(secretRef.Namespace).Delete(secretRef.Name, &metav1.DeleteOptions{})
+	err = p.client.CoreV1().Secrets(secretRef.Namespace).Delete(context.TODO(), secretRef.Name, &metav1.DeleteOptions{})
 	if err != nil {
 		klog.Errorf("Cephfs Provisioner: delete secret failed, err: %v", err)
 		return fmt.Errorf("failed to delete secret")
@@ -363,7 +364,7 @@ func (p *cephFSProvisioner) parsePVSecret(namespace, secretName string) (string,
 	if p.client == nil {
 		return "", fmt.Errorf("Cannot get kube client")
 	}
-	secrets, err := p.client.CoreV1().Secrets(namespace).Get(secretName, metav1.GetOptions{})
+	secrets, err := p.client.CoreV1().Secrets(namespace).Get(context.TODO(), secretName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
