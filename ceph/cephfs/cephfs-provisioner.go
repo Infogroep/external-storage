@@ -121,7 +121,9 @@ func (p *cephFSProvisioner) Provision(options controller.ProvisionOptions) (*v1.
 	if options.PVC.Spec.Selector != nil {
 		return nil, fmt.Errorf("claim Selector is not supported")
 	}
-	cluster, adminID, adminSecret, pvcRoot, mon, deterministicNames, err := p.parseParameters(options.Parameters)
+	parameters := options.StorageClass.Parameters
+
+	cluster, adminID, adminSecret, pvcRoot, mon, deterministicNames, err := p.parseParameters(parameters)
 	if err != nil {
 		return nil, err
 	}
@@ -186,11 +188,14 @@ func (p *cephFSProvisioner) Provision(options controller.ProvisionOptions) (*v1.
 		Type: "Opaque",
 	}
 
-	_, err = p.client.CoreV1().Secrets(nameSpace).Create(context.TODO(), secret, metav1.CreatOptions{})
+	_, err = p.client.CoreV1().Secrets(nameSpace).Create(context.TODO(), secret, metav1.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		klog.Errorf("Cephfs Provisioner: create volume failed, err: %v", err)
 		return nil, fmt.Errorf("failed to create secret")
 	}
+
+	reclaim_policy := options.StorageClass.ReclaimPolicy
+	mount_options := options.StorageClass.MountOptions
 
 	pv := &v1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -201,9 +206,9 @@ func (p *cephFSProvisioner) Provision(options controller.ProvisionOptions) (*v1.
 			},
 		},
 		Spec: v1.PersistentVolumeSpec{
-			PersistentVolumeReclaimPolicy: options.PersistentVolumeReclaimPolicy,
+			PersistentVolumeReclaimPolicy: *reclaim_policy,
 			AccessModes:                   options.PVC.Spec.AccessModes,
-			MountOptions:                  options.MountOptions,
+			MountOptions:                  mount_options,
 			Capacity: v1.ResourceList{
 				// Quotas are supported by the userspace client(ceph-fuse, libcephfs), or kernel client >= 4.17 but only on mimic clusters.
 				// In other cases capacity is meaningless here.
@@ -280,7 +285,7 @@ func (p *cephFSProvisioner) Delete(volume *v1.PersistentVolume) error {
 		klog.Errorf("failed to get secret references, err: %v", err)
 		return err
 	}
-	err = p.client.CoreV1().Secrets(secretRef.Namespace).Delete(context.TODO(), secretRef.Name, &metav1.DeleteOptions{})
+	err = p.client.CoreV1().Secrets(secretRef.Namespace).Delete(context.TODO(), secretRef.Name, metav1.DeleteOptions{})
 	if err != nil {
 		klog.Errorf("Cephfs Provisioner: delete secret failed, err: %v", err)
 		return fmt.Errorf("failed to delete secret")
